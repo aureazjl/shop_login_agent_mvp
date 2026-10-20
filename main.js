@@ -204,16 +204,14 @@ async function openNormalChrome(shop) {
   const port = await findCdpPort(shop);
   normalChromePorts.set(shop.id, port);
   const child = spawn(normalChromePath(), [
-      `--user-data-dir=${profileDir}`,
-    `--remote-debugging-port=${port}`,
-    '--remote-debugging-address=127.0.0.1',
-    '--remote-allow-origins=*',
+    '--new-window',
+    '--start-maximized',
     '--no-first-run',
     '--no-default-browser-check',
-    '--disable-sync',
-    '--new-window',
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${profileDir}`,
     shop.loginUrl || urls[shop.platform]
-  ], { detached: true, stdio: 'ignore', windowsHide: false });
+  ], { cwd: __dirname, detached: true, stdio: 'ignore', windowsHide: false });
   child.unref();
   normalChromeProcesses.set(shop.id, child);
   child.once('exit', () => { if (normalChromeProcesses.get(shop.id) === child) normalChromeProcesses.delete(shop.id); });
