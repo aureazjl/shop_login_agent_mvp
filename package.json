@@ -1,0 +1,26 @@
+{
+  "name": "shop-login-agent-mvp",
+  "version": "1.0.4",
+  "description": "电商运营智能体 MVP 客户端（独立店铺登录与销售数据采集）",
+  "main": "main.js",
+  "author": "local",
+  "license": "MIT",
+  "scripts": {
+    "start": "set ELECTRON_OVERRIDE_DIST_PATH=%CD%\\node_modules\\electron\\dist&& electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "playwright": "^1.55.0"
+  },
+  "devDependencies": {
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "local.shop.login.agent.mvp",
+    "productName": "电商运营智能体 MVP",
+    "directories": { "output": "dist-electron" },
+    "files": ["main.js", "preload.js", "renderer/**/*", "package.json", "node_modules/**/*"],
+    "win": { "target": [{ "target": "portable", "arch": ["x64"] }] }
+  }
+}

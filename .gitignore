@@ -1,0 +1,38 @@
+# dependencies and local runtimes
+node_modules/
+agent_service/.venv/
+agent_service/__pycache__/
+__pycache__/
+*.pyc
+
+# credentials, browser profiles and local runtime state
+data_runtime/
+electron-user-data/
+data/
+*.sqlite
+*.db
+*.db-journal
+*.log
+tmp-cdp-test/
+
+# build and debug outputs
+dist-*/
+*.dmp
+ui-debug.png
+
+# local probes and experimental scripts
+*_probe.mjs
+*_capture.mjs
+*_requests.mjs
+*_matrix.mjs
+*_types.mjs
+*_test.mjs
+douyin_login_persistence_demo.*
+jd_cdp_probe.mjs
+
+# local/editor files
+.env
+.env.*
+.vscode/
+.idea/
+Thumbs.db
