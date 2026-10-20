@@ -20,6 +20,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const http = require('http');
+const net = require('net');
 const { chromium } = require('playwright');
 
 // 新项目只允许一个实例，避免多个 Electron 进程重复抢占本地智能体桥接端口。
@@ -40,6 +41,7 @@ let agentServer;
 const browsers = new Map();
 const loginWatchers = new Map();
 const normalChromeProcesses = new Map();
+const normalChromePorts = new Map();
 const urls = {
   douyin: 'https://fxg.jinritemai.com/ffa/mshop/homepage',
   taobao: 'https://loginmyseller.taobao.com/',
@@ -177,14 +179,33 @@ function cdpPort(shop) {
   for (const ch of String(shop.id)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
   return 9400 + (hash % 100);
 }
-function openNormalChrome(shop) {
+function portIsFree(port) {
+  return new Promise(resolve => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => server.close(() => resolve(true)));
+    server.listen(port, '127.0.0.1');
+  });
+}
+async function findCdpPort(shop) {
+  const remembered = normalChromePorts.get(shop.id) || shop.cdpPort;
+  if (remembered && !(await portIsFree(Number(remembered)))) return Number(remembered);
+  const preferred = cdpPort(shop);
+  if (await portIsFree(preferred)) return preferred;
+  for (let port = 9222; port <= 9322; port += 1) {
+    if (await portIsFree(port)) return port;
+  }
+  throw new Error('没有可用的 Chrome CDP 端口');
+}
+async function openNormalChrome(shop) {
   const old = normalChromeProcesses.get(shop.id);
   if (old && old.exitCode === null && !old.killed) return old;
   const profileDir = shop.platform === 'taobao'
     ? path.join('D:', '店铺登录客户端数据', 'profiles', shop.id)
     : shop.profileDir;
   fs.mkdirSync(profileDir, { recursive: true });
-  const port = cdpPort(shop);
+  const port = await findCdpPort(shop);
+  normalChromePorts.set(shop.id, port);
   const child = spawn(normalChromePath(), [
       `--user-data-dir=${profileDir}`,
     `--remote-debugging-port=${port}`,
@@ -218,7 +239,7 @@ async function connectNormalChrome(shop, options = {}) {
   const launchIfMissing = options.launchIfMissing !== false;
   let lastError;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (attempt > 0 && launchIfMissing) openNormalChrome(shop);
+      if (attempt > 0 && launchIfMissing) await openNormalChrome(shop);
     for (let wait = 0; wait < 12; wait += 1) {
       try {
         const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
@@ -501,7 +522,7 @@ async function login(id) {
   const shop = getShop(id); if (!shop) throw new Error('店铺不存在');
   if (shop.platform === 'taobao') {
     stopLoginWatch(id);
-    openNormalChrome(shop);
+    await openNormalChrome(shop);
     const cdp = await waitForCdp(shop, 10000);
     releaseCdp(cdp);
     patchShop(id, { status: '需登录', lastAction: '已打开原项目淘宝 Chrome 登录窗口，请完成验证后点击检查登录', updatedAt: new Date().toISOString() });
@@ -509,7 +530,7 @@ async function login(id) {
   }
   if (shop.platform === 'taobao' || shop.platform === 'pinduoduo' || shop.platform === 'jd') {
     stopLoginWatch(id);
-    openNormalChrome(shop);
+    await openNormalChrome(shop);
     if (shop.platform === 'taobao') {
       const cdp = await waitForCdp(shop, 10000);
       releaseCdp(cdp);
@@ -519,7 +540,7 @@ async function login(id) {
   }
   if (shop.platform === 'dewu') {
     stopLoginWatch(id);
-    openNormalChrome(shop);
+    await openNormalChrome(shop);
     const cdp = await waitForDewuCdp(shop, 10000);
     releaseCdp(cdp);
     patchShop(id, { status: '需登录', lastAction: '已打开得物独立 Chrome 登录窗口，请完成登录后点击检查登录', updatedAt: new Date().toISOString() });
