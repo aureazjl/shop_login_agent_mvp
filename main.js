@@ -190,11 +190,12 @@ function portIsFree(port) {
 async function findCdpPort(shop) {
   const remembered = normalChromePorts.get(shop.id) || shop.cdpPort;
   if (remembered && !(await portIsFree(Number(remembered)))) return Number(remembered);
-  const preferred = cdpPort(shop);
-  if (await portIsFree(preferred)) return preferred;
+  // 与原项目一致：优先从 9222-9322 选择端口，避免固定落到 9463。
   for (let port = 9222; port <= 9322; port += 1) {
     if (await portIsFree(port)) return port;
   }
+  const preferred = cdpPort(shop);
+  if (await portIsFree(preferred)) return preferred;
   throw new Error('没有可用的 Chrome CDP 端口');
 }
 async function openNormalChrome(shop) {
@@ -232,7 +233,7 @@ async function waitForCdp(shop, timeoutMs = 10000) {
     } catch (error) { lastError = error; }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
-  throw new Error(`淘宝登录窗口未建立 CDP 连接（端口 ${cdpPort(shop)}），请重试登录`);
+  throw new Error(`淘宝登录窗口未建立 CDP 连接（端口 ${normalChromePorts.get(shop.id) || shop.cdpPort || '动态分配'}），请重试登录`);
 }
 async function connectNormalChrome(shop, options = {}) {
   const port = cdpPort(shop);
