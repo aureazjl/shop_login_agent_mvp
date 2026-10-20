@@ -256,7 +256,20 @@ async function connectNormalChrome(shop, options = {}) {
 async function connectDewuChrome(shop) {
   // 得物与淘宝/千牛共用同一套“复用店铺 Chrome 会话”的连接逻辑，
   // 只在页面选择和登录识别阶段使用得物自己的规则。
-  const session = await connectNormalChrome(shop, { launchIfMissing: false });
+  const directPorts = [...new Set([normalChromePorts.get(shop.id), 9222, shop.cdpPort, cdpPort(shop)].filter(Boolean).map(Number))];
+  let session;
+  let lastError;
+  for (const port of directPorts) {
+    try {
+      const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+      const context = browser.contexts()[0];
+      if (!context) throw new Error('Chrome 未返回浏览器上下文');
+      session = { context, page: context.pages()[0], browser, cdp: true, port };
+      normalChromePorts.set(shop.id, port);
+      break;
+    } catch (error) { lastError = error; }
+  }
+  if (!session) throw lastError || new Error('得物普通 Chrome/CDP 会话不可用');
   const page = session.context.pages().find(p => /stark\.dewu\.com/i.test(p.url()));
   if (!page) {
     releaseCdp(session);
@@ -582,7 +595,7 @@ async function check(id) {
       const status = logged ? '已登录' : '需登录';
       patchShop(id, { status, lastCheck: new Date().toISOString(), currentUrl });
       return { ok: true, status, message: logged ? '检测到得物商家后台已登录' : '当前得物仍需登录' };
-    } catch (_) { return { ok: false, message: '请先点击“登录”并在得物商家后台完成登录，保持窗口开启后再点击“检查登录”' }; }
+      } catch (error) { return { ok: false, message: `得物 Chrome 会话连接失败：${error.message}` }; }
   }
   if (shop.platform === 'taobao') {
     try { return await checkTaobao(id, shop); }
