@@ -254,25 +254,15 @@ async function connectNormalChrome(shop, options = {}) {
   throw lastError || new Error('普通 Chrome 会话不可用');
 }
 async function connectDewuChrome(shop) {
-  const ports = [...new Set([
-    normalChromePorts.get(shop.id),
-    shop.cdpPort,
-    cdpPort(shop),
-    9333,
-    ...Array.from({ length: 101 }, (_, i) => 9222 + i)
-  ].filter(Boolean).map(Number))];
-  let lastError;
-  for (const port of ports) {
-    try {
-      const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-      const context = browser.contexts()[0];
-      if (!context) throw new Error('Chrome 未返回浏览器上下文');
-      const page = context.pages().find(p => /stark\.dewu\.com/i.test(p.url())) || context.pages()[0] || await context.newPage();
-      normalChromePorts.set(shop.id, port);
-      return { context, page, browser, cdp: true, port };
-    } catch (error) { lastError = error; }
+  // 得物与淘宝/千牛共用同一套“复用店铺 Chrome 会话”的连接逻辑，
+  // 只在页面选择和登录识别阶段使用得物自己的规则。
+  const session = await connectNormalChrome(shop, { launchIfMissing: false });
+  const page = session.context.pages().find(p => /stark\.dewu\.com/i.test(p.url()));
+  if (!page) {
+    releaseCdp(session);
+    throw new Error('当前 Chrome 会话中未找到得物商家后台页面');
   }
-  throw lastError || new Error('得物普通 Chrome/CDP 会话不可用');
+  return { ...session, page };
 }
 async function waitForDewuCdp(shop, timeoutMs = 10000) {
   const deadline = Date.now() + timeoutMs;
