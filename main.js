@@ -256,7 +256,13 @@ async function connectNormalChrome(shop, options = {}) {
   throw lastError || new Error('普通 Chrome 会话不可用');
 }
 async function connectDewuChrome(shop) {
-  const ports = [...new Set([shop.cdpPort, cdpPort(shop), 9333].filter(Boolean).map(Number))];
+  const ports = [...new Set([
+    normalChromePorts.get(shop.id),
+    shop.cdpPort,
+    cdpPort(shop),
+    9333,
+    ...Array.from({ length: 101 }, (_, i) => 9222 + i)
+  ].filter(Boolean).map(Number))];
   let lastError;
   for (const port of ports) {
     try {
@@ -264,6 +270,7 @@ async function connectDewuChrome(shop) {
       const context = browser.contexts()[0];
       if (!context) throw new Error('Chrome 未返回浏览器上下文');
       const page = context.pages().find(p => /stark\.dewu\.com/i.test(p.url())) || context.pages()[0] || await context.newPage();
+      normalChromePorts.set(shop.id, port);
       return { context, page, browser, cdp: true, port };
     } catch (error) { lastError = error; }
   }
