@@ -129,32 +129,6 @@ async function detectDewuLoggedIn(page) {
 }
 async function checkTaobao(id, shop) {
   const stateFile = authStateFile(shop);
-  const active = browsers.get(id);
-  if (active?.page && !active.page.isClosed()) {
-    const logged = await detectTaobaoLoggedIn(active.page, active.context);
-    const currentUrl = active.page.url();
-    if (logged) { fs.mkdirSync(path.dirname(stateFile), { recursive: true }); await active.context.storageState({ path: stateFile }); }
-    patchShop(id, { status: logged ? '已登录' : '需登录', lastCheck: new Date().toISOString(), currentUrl });
-    return { ok: true, status: logged ? '已登录' : '需登录', message: logged ? '检测到当前淘宝生意参谋已登录' : '当前淘宝窗口仍处于登录页，请完成登录后重试' };
-  }
-  // Chrome 新版本可能禁用 remote-debugging-port。淘宝仍使用本机 Chrome 和原店铺目录，
-  // 直接复用持久化登录态，避免依赖 CDP 端口或切换到 Electron 浏览器。
-  try {
-    const session = await getPage(id, true);
-    if (/^(about:blank|chrome:\/\/newtab)/i.test(session.page.url())) {
-      await session.page.goto(shopUrl(shop), { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-    }
-    await session.page.waitForTimeout(1200);
-    const logged = await detectTaobaoLoggedIn(session.page, session.context);
-    const currentUrl = session.page.url();
-    if (logged) {
-      fs.mkdirSync(path.dirname(stateFile), { recursive: true });
-      await session.context.storageState({ path: stateFile });
-    }
-    const status = logged ? '已登录' : '需登录';
-    patchShop(id, { status, lastCheck: new Date().toISOString(), currentUrl });
-    return { ok: true, status, message: logged ? '已从淘宝店铺 Chrome 目录检测到登录态' : '请在客户端打开的淘宝 Chrome 中完成登录后重试' };
-  } catch (_) {}
   let session;
   try {
     session = await connectNormalChrome(shop, { launchIfMissing: false });
@@ -206,10 +180,13 @@ function cdpPort(shop) {
 function openNormalChrome(shop) {
   const old = normalChromeProcesses.get(shop.id);
   if (old && old.exitCode === null && !old.killed) return old;
-  fs.mkdirSync(shop.profileDir, { recursive: true });
+  const profileDir = shop.platform === 'taobao'
+    ? path.join('D:', '店铺登录客户端数据', 'profiles', shop.id)
+    : shop.profileDir;
+  fs.mkdirSync(profileDir, { recursive: true });
   const port = cdpPort(shop);
   const child = spawn(normalChromePath(), [
-    `--user-data-dir=${shop.profileDir}`,
+      `--user-data-dir=${profileDir}`,
     `--remote-debugging-port=${port}`,
     '--remote-debugging-address=127.0.0.1',
     '--remote-allow-origins=*',
@@ -524,10 +501,11 @@ async function login(id) {
   const shop = getShop(id); if (!shop) throw new Error('店铺不存在');
   if (shop.platform === 'taobao') {
     stopLoginWatch(id);
-    const session = await getPage(id, true);
-    await session.page.goto(shopUrl(shop), { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-    patchShop(id, { status: '需登录', lastAction: '已打开本机 Chrome 店铺目录，请完成验证后点击检查登录', updatedAt: new Date().toISOString() });
-    return { ok: true, manualCheck: true, message: '已打开本机 Google Chrome 店铺目录，请完成淘宝登录并保持窗口开启，再点击“检查登录”' };
+    openNormalChrome(shop);
+    const cdp = await waitForCdp(shop, 10000);
+    releaseCdp(cdp);
+    patchShop(id, { status: '需登录', lastAction: '已打开原项目淘宝 Chrome 登录窗口，请完成验证后点击检查登录', updatedAt: new Date().toISOString() });
+    return { ok: true, manualCheck: true, message: '已按原项目方式打开淘宝 Chrome，请完成登录并保持窗口开启，再点击“检查登录”' };
   }
   if (shop.platform === 'taobao' || shop.platform === 'pinduoduo' || shop.platform === 'jd') {
     stopLoginWatch(id);
