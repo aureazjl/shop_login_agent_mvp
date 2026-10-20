@@ -197,9 +197,8 @@ async function findCdpPort(shop) {
 async function openNormalChrome(shop) {
   const old = normalChromeProcesses.get(shop.id);
   if (old && old.exitCode === null && !old.killed) return old;
-  const profileDir = ['taobao', 'dewu', 'jd', 'pinduoduo'].includes(shop.platform)
-    ? path.join('D:', '店铺登录客户端数据', 'profiles', shop.id)
-    : shop.profileDir;
+  // 新项目只使用已经复制到 data_runtime 的独立店铺 profile，不读取原项目目录。
+  const profileDir = shop.profileDir;
   fs.mkdirSync(profileDir, { recursive: true });
   const port = await findCdpPort(shop);
   normalChromePorts.set(shop.id, port);
@@ -256,7 +255,8 @@ async function connectNormalChrome(shop, options = {}) {
 async function connectDewuChrome(shop) {
   // 得物与淘宝/千牛共用同一套“复用店铺 Chrome 会话”的连接逻辑，
   // 只在页面选择和登录识别阶段使用得物自己的规则。
-  const directPorts = [...new Set([normalChromePorts.get(shop.id), 9222, shop.cdpPort, cdpPort(shop)].filter(Boolean).map(Number))];
+  // 原项目得物启动器优先复用 9222；不要先碰其他店铺遗留端口。
+  const directPorts = [...new Set([9222, normalChromePorts.get(shop.id), shop.cdpPort, cdpPort(shop)].filter(Boolean).map(Number))];
   let session;
   let lastError;
   for (const port of directPorts) {
