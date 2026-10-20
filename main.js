@@ -197,7 +197,7 @@ async function findCdpPort(shop) {
 async function openNormalChrome(shop) {
   const old = normalChromeProcesses.get(shop.id);
   if (old && old.exitCode === null && !old.killed) return old;
-  const profileDir = shop.platform === 'taobao'
+  const profileDir = ['taobao', 'dewu', 'jd', 'pinduoduo'].includes(shop.platform)
     ? path.join('D:', '店铺登录客户端数据', 'profiles', shop.id)
     : shop.profileDir;
   fs.mkdirSync(profileDir, { recursive: true });
