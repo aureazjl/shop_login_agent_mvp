@@ -88,7 +88,7 @@ LangGraph 服务 → 127.0.0.1:18769 → Electron 店铺工具 → 平台后台
 ### 启动 Electron 客户端
 
 ~~~powershell
-cd D:\Backup\Documents\自动化\shop_login_agent_mvp
+cd path\to\shop_login_agent_mvp
 npm install
 npm start
 ~~~
@@ -98,7 +98,7 @@ npm start
 ### 安装并启动 LangGraph 服务
 
 ~~~powershell
-cd D:\Backup\Documents\自动化\shop_login_agent_mvp\agent_service
+cd path\to\shop_login_agent_mvp\agent_service
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
