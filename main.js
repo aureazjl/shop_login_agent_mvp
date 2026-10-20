@@ -113,12 +113,11 @@ async function detectTaobaoLoggedIn(page, context) {
   })).catch(() => ({ url: page.url(), title: '', text: '', passwordInputs: 0, loginButtons: 0 }));
   const text = `${info.title} ${info.text}`;
   const hasLoginForm = info.passwordInputs > 0 && info.loginButtons > 0;
-  const hasSellerContent = /卖家中心|商家中心|店铺管理|千牛|交易管理|订单管理|生意参谋|店铺数据|售前售后|物流监控|营销|商品|财务/.test(text);
-  const onSellerCenter = /myseller\.taobao\.com/i.test(info.url) && !/login|passport/i.test(info.url);
+  const hasSellerContent = /卖家中心|商家中心|店铺管理|千牛|交易管理|订单管理|生意参谋/.test(text);
   const redirectedAway = !/loginmyseller\.taobao\.com|login\.taobao\.com|passport\.taobao\.com/i.test(info.url);
   const cookies = await context.cookies(['https://taobao.com', 'https://seller.taobao.com', 'https://loginmyseller.taobao.com']).catch(() => []);
   const hasSessionCookie = cookies.some(x => ['_tb_token_', 'cookie2', 'unb', 'sgcookie', 'tracknick'].includes(x.name) && x.value);
-  return Boolean(!hasLoginForm && (onSellerCenter || hasSellerContent || (redirectedAway && hasSessionCookie)));
+  return Boolean(!hasLoginForm && (hasSellerContent || (redirectedAway && hasSessionCookie)));
 }
 async function detectDewuLoggedIn(page) {
   const info = await page.evaluate(() => ({
@@ -179,34 +178,14 @@ function cdpPort(shop) {
   for (const ch of String(shop.id)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
   return 9400 + (hash % 100);
 }
-function portIsFree(port) {
-  return new Promise(resolve => {
-    const server = net.createServer();
-    server.once('error', () => resolve(false));
-    server.once('listening', () => server.close(() => resolve(true)));
-    server.listen(port, '127.0.0.1');
-  });
-}
-async function findCdpPort(shop) {
-  const remembered = normalChromePorts.get(shop.id) || shop.cdpPort;
-  if (remembered && !(await portIsFree(Number(remembered)))) return Number(remembered);
-  // 与原项目一致：优先从 9222-9322 选择端口，避免固定落到 9463。
-  for (let port = 9222; port <= 9322; port += 1) {
-    if (await portIsFree(port)) return port;
-  }
-  const preferred = cdpPort(shop);
-  if (await portIsFree(preferred)) return preferred;
-  throw new Error('没有可用的 Chrome CDP 端口');
-}
-async function openNormalChrome(shop) {
+function openNormalChrome(shop) {
   const old = normalChromeProcesses.get(shop.id);
   if (old && old.exitCode === null && !old.killed) return old;
   const profileDir = shop.platform === 'taobao'
     ? path.join('D:', '店铺登录客户端数据', 'profiles', shop.id)
     : shop.profileDir;
   fs.mkdirSync(profileDir, { recursive: true });
-  const port = await findCdpPort(shop);
-  normalChromePorts.set(shop.id, port);
+  const port = cdpPort(shop);
   const child = spawn(normalChromePath(), [
       `--user-data-dir=${profileDir}`,
     `--remote-debugging-port=${port}`,
@@ -233,14 +212,14 @@ async function waitForCdp(shop, timeoutMs = 10000) {
     } catch (error) { lastError = error; }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
-  throw new Error(`淘宝登录窗口未建立 CDP 连接（端口 ${normalChromePorts.get(shop.id) || shop.cdpPort || '动态分配'}），请重试登录`);
+  throw new Error(`淘宝登录窗口未建立 CDP 连接（端口 ${cdpPort(shop)}），请重试登录`);
 }
 async function connectNormalChrome(shop, options = {}) {
   const port = cdpPort(shop);
   const launchIfMissing = options.launchIfMissing !== false;
   let lastError;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-      if (attempt > 0 && launchIfMissing) await openNormalChrome(shop);
+      if (attempt > 0 && launchIfMissing) openNormalChrome(shop);
     for (let wait = 0; wait < 12; wait += 1) {
       try {
         const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
