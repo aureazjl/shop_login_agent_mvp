@@ -178,14 +178,31 @@ function cdpPort(shop) {
   for (const ch of String(shop.id)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
   return 9400 + (hash % 100);
 }
-function openNormalChrome(shop) {
+function portIsFree(port) {
+  return new Promise(resolve => {
+    const server = net.createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => server.close(() => resolve(true)));
+    server.listen(port, '127.0.0.1');
+  });
+}
+async function findCdpPort(shop) {
+  const preferred = normalChromePorts.get(shop.id) || shop.cdpPort;
+  if (preferred && await portIsFree(Number(preferred))) return Number(preferred);
+  for (let port = 9222; port <= 9322; port += 1) {
+    if (await portIsFree(port)) return port;
+  }
+  throw new Error('没有可用的 Chrome CDP 端口');
+}
+async function openNormalChrome(shop) {
   const old = normalChromeProcesses.get(shop.id);
   if (old && old.exitCode === null && !old.killed) return old;
   const profileDir = shop.platform === 'taobao'
     ? path.join('D:', '店铺登录客户端数据', 'profiles', shop.id)
     : shop.profileDir;
   fs.mkdirSync(profileDir, { recursive: true });
-  const port = cdpPort(shop);
+  const port = await findCdpPort(shop);
+  normalChromePorts.set(shop.id, port);
   const child = spawn(normalChromePath(), [
       `--user-data-dir=${profileDir}`,
     `--remote-debugging-port=${port}`,
@@ -212,28 +229,31 @@ async function waitForCdp(shop, timeoutMs = 10000) {
     } catch (error) { lastError = error; }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
-  throw new Error(`淘宝登录窗口未建立 CDP 连接（端口 ${cdpPort(shop)}），请重试登录`);
+  throw new Error(`淘宝登录窗口未建立 CDP 连接（端口 ${normalChromePorts.get(shop.id) || '动态分配'}），请重试登录`);
 }
 async function connectNormalChrome(shop, options = {}) {
-  const port = cdpPort(shop);
   const launchIfMissing = options.launchIfMissing !== false;
   let lastError;
+  const known = [normalChromePorts.get(shop.id), shop.cdpPort, cdpPort(shop)].filter(Boolean).map(Number);
+  const candidates = [...new Set([...known, ...Array.from({ length: 101 }, (_, i) => 9222 + i)])];
   for (let attempt = 0; attempt < 2; attempt += 1) {
-      if (attempt > 0 && launchIfMissing) openNormalChrome(shop);
-    for (let wait = 0; wait < 12; wait += 1) {
+    if (attempt > 0 && launchIfMissing) await openNormalChrome(shop);
+    const ports = attempt === 0 ? candidates : [normalChromePorts.get(shop.id)];
+    for (const port of ports.filter(Boolean)) {
       try {
         const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
         const context = browser.contexts()[0];
         if (!context) throw new Error('Chrome 未返回浏览器上下文');
         const page = context.pages()[0] || await context.newPage();
-        return { context, page, browser, cdp: true };
+        normalChromePorts.set(shop.id, port);
+        return { context, page, browser, cdp: true, port };
       } catch (error) {
         lastError = error;
-        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
-  throw new Error('普通 Chrome 会话不可用');
+  throw lastError || new Error('普通 Chrome 会话不可用');
 }
 async function connectDewuChrome(shop) {
   const ports = [...new Set([shop.cdpPort, cdpPort(shop), 9333].filter(Boolean).map(Number))];
